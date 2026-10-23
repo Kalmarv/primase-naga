@@ -5,15 +5,6 @@ struct HitCounters {
     selected_hit: u32,
 }
 
-struct RayDesc {
-    flags: u32,
-    cull_mask: u32,
-    tmin: f32,
-    tmax: f32,
-    origin: vec3<f32>,
-    dir: vec3<f32>,
-}
-
 var<ray_payload> hit_num: HitCounters;
 @group(0) @binding(0) 
 var acc_struct: acceleration_structure;

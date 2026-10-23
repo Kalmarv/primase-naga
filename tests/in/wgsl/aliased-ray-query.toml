@@ -1,5 +1,5 @@
 capabilities = "RAY_QUERY"
-targets = "SPIRV | METAL | HLSL"
+targets = "SPIRV | METAL | HLSL | WGSL"
 
 [msl]
 fake_missing_bindings = true

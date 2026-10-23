@@ -449,6 +449,20 @@ pub const BUILTIN_IDENTIFIERS: &[&str] = &[
     "f64",
     "push_constant",
     "r64uint",
+    // the ray tracing extensions' predeclared types (but not `RayDesc` and `RayIntersection`, which are the module's own
+    // structures, written by name) and built-in functions
+    "acceleration_structure",
+    "ray_query",
+    "rayQueryInitialize",
+    "rayQueryProceed",
+    "rayQueryGenerateIntersection",
+    "rayQueryConfirmIntersection",
+    "rayQueryTerminate",
+    "rayQueryGetCommittedIntersection",
+    "rayQueryGetCandidateIntersection",
+    "getCommittedHitVertexPositions",
+    "getCandidateHitVertexPositions",
+    "traceRay",
 ];
 
 pub static BUILTIN_IDENTIFIER_SET: RacyLock<KeywordSet> =

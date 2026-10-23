@@ -1,6 +1,6 @@
 capabilities = "RAY_QUERY"
 pipeline_constants = { o = 2.0 }
-targets = "IR | SPIRV | METAL"
+targets = "IR | SPIRV | METAL | WGSL"
 
 [msl]
 fake_missing_bindings = true

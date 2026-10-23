@@ -138,6 +138,9 @@ impl<W: Write> Writer<W> {
             .any(|t| *t == ty)
             || Some(ty) == module.special_types.external_texture_params
             || Some(ty) == module.special_types.external_texture_transfer_function
+            // `RayDesc` and `RayIntersection` are predeclared by the ray tracing extensions
+            || Some(ty) == module.special_types.ray_desc
+            || Some(ty) == module.special_types.ray_intersection
     }
 
     pub fn write(&mut self, module: &Module, info: &valid::ModuleInfo) -> BackendResult {
@@ -298,6 +301,10 @@ impl<W: Write> Writer<W> {
             cooperative_matrix: bool,
             draw_index: bool,
             ray_tracing_pipeline: bool,
+            ray_query: bool,
+            ray_query_vertex_return: bool,
+            /// The module has an acceleration structure: either ray tracing extension declares the type.
+            acceleration_structure: bool,
             per_vertex: bool,
             binding_array: bool,
         }
@@ -368,8 +375,13 @@ impl<W: Write> Writer<W> {
                 TypeInner::CooperativeMatrix { .. } => {
                     needed.cooperative_matrix = true;
                 }
-                TypeInner::AccelerationStructure { .. } => {
-                    needed.ray_tracing_pipeline = true;
+                TypeInner::AccelerationStructure { vertex_return } => {
+                    needed.acceleration_structure = true;
+                    needed.ray_query_vertex_return |= vertex_return;
+                }
+                TypeInner::RayQuery { vertex_return } => {
+                    needed.ray_query = true;
+                    needed.ray_query_vertex_return |= vertex_return;
                 }
                 TypeInner::BindingArray { .. } => {
                     needed.binding_array = true;
@@ -430,6 +442,13 @@ impl<W: Write> Writer<W> {
             needed.ray_tracing_pipeline = true;
         }
 
+        // An acceleration structure alone is declared by either ray tracing extension: the module says which it
+        // uses by what else it has (a ray query, or the pipeline's stages and payloads), and a module with neither
+        // gets the pipeline's, as it always has.
+        if needed.acceleration_structure && !needed.ray_query {
+            needed.ray_tracing_pipeline = true;
+        }
+
         // Write required declarations
         let mut any_written = false;
         if needed.f16 {
@@ -466,6 +485,14 @@ impl<W: Write> Writer<W> {
         }
         if needed.cooperative_matrix {
             writeln!(self.out, "enable wgpu_cooperative_matrix;")?;
+            any_written = true;
+        }
+        if needed.ray_query {
+            writeln!(self.out, "enable wgpu_ray_query;")?;
+            any_written = true;
+        }
+        if needed.ray_query_vertex_return {
+            writeln!(self.out, "enable wgpu_ray_query_vertex_return;")?;
             any_written = true;
         }
         if needed.ray_tracing_pipeline {
@@ -745,6 +772,9 @@ impl<W: Write> Writer<W> {
                             Expression::ImageLoad { .. }
                             | Expression::ImageQuery { .. }
                             | Expression::ImageSample { .. } => true,
+                            // a query's state is read at this point of the program: later calls change it
+                            Expression::RayQueryGetIntersection { .. }
+                            | Expression::RayQueryVertexPositions { .. } => true,
                             _ => false,
                         };
                         if min_ref_count <= info.ref_count || required_baking_expr {
@@ -1063,7 +1093,46 @@ impl<W: Write> Writer<W> {
                     writeln!(self.out, "{level}textureBarrier();")?;
                 }
             }
-            Statement::RayQuery { .. } => unreachable!(),
+            Statement::RayQuery { query, ref fun } => match *fun {
+                crate::RayQueryFunction::Initialize {
+                    acceleration_structure,
+                    descriptor,
+                } => {
+                    write!(self.out, "{level}rayQueryInitialize(")?;
+                    self.write_expr(module, query, func_ctx)?;
+                    write!(self.out, ", ")?;
+                    self.write_expr(module, acceleration_structure, func_ctx)?;
+                    write!(self.out, ", ")?;
+                    self.write_expr(module, descriptor, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
+                crate::RayQueryFunction::Proceed { result } => {
+                    write!(self.out, "{level}")?;
+                    let res_name = Baked(result).to_string();
+                    self.start_named_expr(module, result, func_ctx, &res_name)?;
+                    self.named_expressions.insert(result, res_name);
+                    write!(self.out, "rayQueryProceed(")?;
+                    self.write_expr(module, query, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
+                crate::RayQueryFunction::GenerateIntersection { hit_t } => {
+                    write!(self.out, "{level}rayQueryGenerateIntersection(")?;
+                    self.write_expr(module, query, func_ctx)?;
+                    write!(self.out, ", ")?;
+                    self.write_expr(module, hit_t, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
+                crate::RayQueryFunction::ConfirmIntersection => {
+                    write!(self.out, "{level}rayQueryConfirmIntersection(")?;
+                    self.write_expr(module, query, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
+                crate::RayQueryFunction::Terminate => {
+                    write!(self.out, "{level}rayQueryTerminate(")?;
+                    self.write_expr(module, query, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
+            },
             Statement::SubgroupBallot { result, predicate } => {
                 write!(self.out, "{level}")?;
                 let res_name = Baked(result).to_string();
@@ -1932,9 +2001,18 @@ impl<W: Write> Writer<W> {
 
                 write!(self.out, ")")?
             }
-            // Not supported yet
-            Expression::RayQueryGetIntersection { .. }
-            | Expression::RayQueryVertexPositions { .. } => unreachable!(),
+            Expression::RayQueryGetIntersection { query, committed } => {
+                let which = if committed { "Committed" } else { "Candidate" };
+                write!(self.out, "rayQueryGet{which}Intersection(")?;
+                self.write_expr(module, query, func_ctx)?;
+                write!(self.out, ")")?;
+            }
+            Expression::RayQueryVertexPositions { query, committed } => {
+                let which = if committed { "Committed" } else { "Candidate" };
+                write!(self.out, "get{which}HitVertexPositions(")?;
+                self.write_expr(module, query, func_ctx)?;
+                write!(self.out, ")")?;
+            }
             // Nothing to do here, since call expression already cached
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
