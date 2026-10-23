@@ -1585,6 +1585,12 @@ impl<W: Write> Writer<W> {
         result: Option<Handle<crate::Expression>>,
         context: &StatementContext,
     ) -> BackendResult {
+        // Metal's texture atomics are the add, subtract, and, or, xor, min and max
+        if matches!(fun, crate::AtomicFunction::Exchange { .. }) {
+            return Err(Error::FeatureNotImplemented(
+                "exchange atomic on a texture".to_string(),
+            ));
+        }
         write!(self.out, "{level}")?;
         // the call gives the texel's old value as a four-component vector: the result is its first
         if let Some(result) = result {

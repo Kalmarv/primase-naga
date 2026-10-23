@@ -1415,7 +1415,10 @@ impl super::Validator {
                                                 | crate::AtomicFunction::ExclusiveOr
                                                 | crate::AtomicFunction::InclusiveOr
                                                 | crate::AtomicFunction::Min
-                                                | crate::AtomicFunction::Max => {}
+                                                | crate::AtomicFunction::Max
+                                                | crate::AtomicFunction::Exchange {
+                                                    compare: None,
+                                                } => {}
                                                 _ => {
                                                     return Err(
                                                         FunctionError::InvalidImageAtomicFunction(

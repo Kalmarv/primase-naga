@@ -2285,6 +2285,17 @@ pub enum Statement {
         array_index: Option<Handle<Expression>>,
 
         /// The kind of atomic operation to perform on the texel.
+        ///
+        /// This is [`Add`], [`And`], [`InclusiveOr`], [`ExclusiveOr`], [`Min`], [`Max`] or
+        /// [`Exchange { compare: None }`] for a 32-bit image, and [`Min`] or [`Max`] for a 64-bit one.
+        ///
+        /// [`Add`]: AtomicFunction::Add
+        /// [`And`]: AtomicFunction::And
+        /// [`InclusiveOr`]: AtomicFunction::InclusiveOr
+        /// [`ExclusiveOr`]: AtomicFunction::ExclusiveOr
+        /// [`Min`]: AtomicFunction::Min
+        /// [`Max`]: AtomicFunction::Max
+        /// [`Exchange { compare: None }`]: AtomicFunction::Exchange
         fun: AtomicFunction,
 
         /// The value with which to perform the atomic operation.

@@ -52,6 +52,8 @@ pub(crate) const IMAGE_LOAD_EXTERNAL_FUNCTION: &str = "nagaTextureLoadExternal";
 pub(crate) const RAY_QUERY_TRACKER_VARIABLE_PREFIX: &str = "naga_query_init_tracker_for_";
 /// Prefix for variables in a naga statement
 pub(crate) const INTERNAL_PREFIX: &str = "naga_";
+/// The variable that takes the old value of an image exchange whose result the program does not use.
+const IMAGE_ATOMIC_DISCARDED_OLD_VALUE: &str = "naga_image_atomic_old";
 
 enum Index {
     Expression(Handle<crate::Expression>),
@@ -2828,6 +2830,21 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     None
                 };
 
+                // `InterlockedExchange` always takes a variable for the old value; when the program
+                // does not ask for it, one in a block of its own takes it
+                let discarded_old = result.is_none()
+                    && matches!(fun, crate::AtomicFunction::Exchange { compare: None });
+                if discarded_old {
+                    write!(self.out, "{{ ")?;
+                    match func_ctx.info[value].ty {
+                        proc::TypeResolution::Handle(handle) => self.write_type(module, handle)?,
+                        proc::TypeResolution::Value(ref value) => {
+                            self.write_value_type(module, value)?
+                        }
+                    };
+                    write!(self.out, " {IMAGE_ATOMIC_DISCARDED_OLD_VALUE}; ")?;
+                }
+
                 let fun_str = fun.to_hlsl_suffix();
                 write!(self.out, "Interlocked{fun_str}(")?;
                 self.write_expr(module, image, func_ctx)?;
@@ -2846,7 +2863,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 } else {
                     write!(self.out, "],")?;
                     self.write_expr(module, value, func_ctx)?;
-                    writeln!(self.out, ");")?;
+                    if discarded_old {
+                        write!(self.out, ", {IMAGE_ATOMIC_DISCARDED_OLD_VALUE}); }}")?;
+                    } else {
+                        write!(self.out, ")")?;
+                    }
+                    writeln!(self.out, ";")?;
                 }
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {

@@ -923,6 +923,10 @@ impl<W: Write> Writer<W> {
                         result,
                     ));
                 }
+                // WGSL's texture atomics are the add, and, or, xor, min and max
+                if matches!(fun, crate::AtomicFunction::Exchange { .. }) {
+                    return Err(Error::unsupported("texture atomic exchange", *fun));
+                }
                 write!(self.out, "{level}")?;
                 let fun_str = fun.to_wgsl();
                 write!(self.out, "textureAtomic{fun_str}(")?;

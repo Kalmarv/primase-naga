@@ -14,7 +14,8 @@ gets an [`Expression::AtomicResult`], which is stored to a local variable of its
 
 use naga::{
     valid::{Capabilities, ModuleInfo, ValidationFlags, Validator},
-    Block, Expression, LocalVariable, Module, Scalar, Span, Statement, Type, TypeInner,
+    AtomicFunction, Block, Expression, LocalVariable, Module, Scalar, Span, Statement, Type,
+    TypeInner,
 };
 
 const SOURCE: &str = "
@@ -377,4 +378,187 @@ fn wgsl_refuses_a_result() {
     let module = parse(SOURCE);
     let info = validate(&module).unwrap();
     naga::back::wgsl::write_string(&module, &info, naga::back::wgsl::WriterFlags::empty()).unwrap();
+}
+
+/// Make the `n`th `ImageAtomic` of the first entry point an exchange, with its result or without.
+/// The expression of a result that is dropped becomes a literal, so nothing is left unpopulated.
+fn exchange(module: &mut Module, n: usize, keep_result: bool) {
+    let function = &mut module.entry_points[0].function;
+    let statement = function
+        .body
+        .iter_mut()
+        .filter(|s| matches!(s, Statement::ImageAtomic { .. }))
+        .nth(n)
+        .unwrap();
+    let Statement::ImageAtomic { fun, result, .. } = statement else {
+        unreachable!()
+    };
+    *fun = AtomicFunction::Exchange { compare: None };
+    if !keep_result {
+        let dropped = result.take().unwrap();
+        function.expressions[dropped] = Expression::Literal(naga::Literal::I32(0));
+    }
+}
+
+/// The module of [`valid_module`] with its first operation (on a `u32` image) an exchange, and its
+/// fourth (on an `i32` image) an exchange whose old value the program does not ask for.
+fn exchange_module() -> (Module, ModuleInfo) {
+    let mut module = parse(SOURCE);
+    with_results(&mut module, |_| {});
+    exchange(&mut module, 0, true);
+    exchange(&mut module, 3, false);
+    let info = validate(&module).expect("exchange on a 32-bit image validates");
+    (module, info)
+}
+
+#[test]
+fn an_exchange_validates_with_its_result_or_without() {
+    exchange_module();
+}
+
+#[test]
+fn a_compare_exchange_on_an_image_is_invalid() {
+    let mut module = parse(SOURCE);
+    with_results(&mut module, |_| {});
+    let compare = module.entry_points[0]
+        .function
+        .expressions
+        .append(Expression::Literal(naga::Literal::U32(0)), Span::UNDEFINED);
+    for statement in module.entry_points[0].function.body.iter_mut() {
+        if let Statement::ImageAtomic { fun, .. } = statement {
+            *fun = AtomicFunction::Exchange {
+                compare: Some(compare),
+            };
+            break;
+        }
+    }
+    let err = validate(&module).expect_err("a compare-exchange on an image is invalid");
+    assert!(
+        format!("{err:?}").contains("InvalidImageAtomicFunction"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn a_64_bit_image_has_no_exchange() {
+    let mut module = parse(include_str!("../in/wgsl/atomicTexture-int64.wgsl"));
+    for statement in module.entry_points[0].function.body.iter_mut() {
+        if let Statement::ImageAtomic { fun, .. } = statement {
+            *fun = AtomicFunction::Exchange { compare: None };
+            break;
+        }
+    }
+    let err = validate(&module).expect_err("a 64-bit image has min and max only");
+    assert!(
+        format!("{err:?}").contains("InvalidImageAtomicFunction"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[cfg(spv_out)]
+#[test]
+fn spirv_writes_an_exchange() {
+    use rspirv::binary::Disassemble;
+
+    let (module, info) = exchange_module();
+    let words =
+        naga::back::spv::write_vec(&module, &info, &naga::back::spv::Options::default(), None)
+            .unwrap();
+    let text = rspirv::dr::load_words(&words).unwrap().disassemble();
+    // the one whose old value is not asked for is written too
+    assert_eq!(text.matches("OpAtomicExchange").count(), 2, "{text}");
+}
+
+#[cfg(hlsl_out)]
+#[test]
+fn hlsl_writes_an_exchange_with_a_variable_for_the_old_value() {
+    let (module, info) = exchange_module();
+    let options = naga::back::hlsl::Options::default();
+    let mut text = String::new();
+    naga::back::hlsl::Writer::new(&mut text, &options, &Default::default())
+        .write(&module, &info, None)
+        .unwrap();
+    assert!(
+        text.contains("uint _e26; InterlockedExchange(image_u[int2(int(0), int(0))], 1u, _e26);"),
+        "{text}"
+    );
+    // the old value nothing reads still goes to a variable, in a block of its own
+    assert!(
+        text.contains(
+            "{ int naga_image_atomic_old; InterlockedExchange(image_s[int2(int(0), int(0))],int(1), naga_image_atomic_old); }"
+        ),
+        "{text}"
+    );
+}
+
+#[cfg(glsl_out)]
+#[test]
+fn glsl_writes_an_exchange() {
+    let (module, info) = exchange_module();
+    let options = naga::back::glsl::Options {
+        version: naga::back::glsl::Version::Desktop(420),
+        ..Default::default()
+    };
+    let pipeline = naga::back::glsl::PipelineOptions {
+        shader_stage: naga::ShaderStage::Compute,
+        entry_point: "cs_main".into(),
+        multiview: None,
+    };
+    let mut text = String::new();
+    naga::back::glsl::Writer::new(
+        &mut text,
+        &module,
+        &info,
+        &options,
+        &pipeline,
+        Default::default(),
+    )
+    .unwrap()
+    .write()
+    .unwrap();
+    assert!(
+        text.contains("uint _e26 = imageAtomicExchange(_group_0_binding_0_cs, ivec2(0, 0), 1u);"),
+        "{text}"
+    );
+    assert!(
+        text.contains("imageAtomicExchange(_group_0_binding_1_cs, ivec2(0, 0), 1);"),
+        "{text}"
+    );
+}
+
+#[cfg(msl_out)]
+#[test]
+fn msl_has_no_texture_exchange() {
+    let (module, info) = exchange_module();
+    let options = naga::back::msl::Options {
+        lang_version: (3, 1),
+        fake_missing_bindings: true,
+        ..Default::default()
+    };
+    let err = naga::back::msl::write_string(
+        &module,
+        &info,
+        &options,
+        &naga::back::msl::PipelineOptions::default(),
+    )
+    .expect_err("Metal's texture atomics have no exchange");
+    assert!(
+        err.to_string().contains("exchange atomic on a texture"),
+        "unexpected error: {err}"
+    );
+}
+
+#[cfg(wgsl_out)]
+#[test]
+fn wgsl_has_no_texture_exchange() {
+    let mut module = parse(SOURCE);
+    exchange(&mut module, 0, true);
+    let info = validate(&module).unwrap();
+    let err =
+        naga::back::wgsl::write_string(&module, &info, naga::back::wgsl::WriterFlags::empty())
+            .expect_err("WGSL's texture atomics have no exchange");
+    assert!(
+        err.to_string().contains("texture atomic exchange"),
+        "unexpected error: {err}"
+    );
 }

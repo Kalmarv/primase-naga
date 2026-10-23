@@ -1358,8 +1358,11 @@ impl BlockContext<'_> {
             crate::AtomicFunction::Min => spirv::Op::AtomicUMin,
             crate::AtomicFunction::Max if signed => spirv::Op::AtomicSMax,
             crate::AtomicFunction::Max => spirv::Op::AtomicUMax,
-            crate::AtomicFunction::Exchange { .. } => {
-                return Err(Error::Validation("Exchange atomics are not supported yet"))
+            crate::AtomicFunction::Exchange { compare: None } => spirv::Op::AtomicExchange,
+            crate::AtomicFunction::Exchange { compare: Some(_) } => {
+                return Err(Error::Validation(
+                    "Compare-exchange atomics on images are not supported yet",
+                ))
             }
         };
         let result_type_id = self.get_expression_type_id(&self.fun_info[value].ty);
