@@ -264,7 +264,11 @@ impl StatementGraph {
                     array_index,
                     fun: _,
                     value,
+                    result,
                 } => {
+                    if let Some(result) = result {
+                        self.emits.push((id, result));
+                    }
                     self.dependencies.push((id, image, "image"));
                     self.dependencies.push((id, coordinate, "coordinate"));
                     if let Some(expr) = array_index {

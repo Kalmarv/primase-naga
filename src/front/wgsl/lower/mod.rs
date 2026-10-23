@@ -3310,6 +3310,8 @@ impl<'source, 'temp> Lowerer<'source, 'temp> {
                             _ => unreachable!(),
                         },
                         value,
+                        // WGSL's texture atomics return nothing
+                        result: None,
                     };
                     rctx.block.push(stmt, function_span);
                     return Ok(None);

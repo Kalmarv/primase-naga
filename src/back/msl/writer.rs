@@ -1574,6 +1574,7 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn put_image_atomic(
         &mut self,
         level: back::Level,
@@ -1581,9 +1582,16 @@ impl<W: Write> Writer<W> {
         address: &TexelAddress,
         fun: crate::AtomicFunction,
         value: Handle<crate::Expression>,
+        result: Option<Handle<crate::Expression>>,
         context: &StatementContext,
     ) -> BackendResult {
         write!(self.out, "{level}")?;
+        // the call gives the texel's old value as a four-component vector: the result is its first
+        if let Some(result) = result {
+            let name = Baked(result).to_string();
+            self.start_baking_expression(result, &context.expression, &name)?;
+            self.named_expressions.insert(result, name);
+        }
         self.put_expression(image, &context.expression, false)?;
         let op = if context.expression.resolve_type(value).scalar_width() == Some(8) {
             fun.to_msl_64_bit()?
@@ -1595,7 +1603,11 @@ impl<W: Write> Writer<W> {
         self.put_cast_to_uint_scalar_or_vector(address.coordinate, &context.expression)?;
         write!(self.out, ", ")?;
         self.put_expression(value, &context.expression, true)?;
-        writeln!(self.out, ");")?;
+        write!(self.out, ")")?;
+        if result.is_some() {
+            write!(self.out, ".x")?;
+        }
+        writeln!(self.out, ";")?;
 
         // Workaround for Apple Metal TBDR driver bug: fragment shader atomic
         // texture writes randomly drop unless followed by a standard texture
@@ -4283,6 +4295,7 @@ impl<W: Write> Writer<W> {
                     array_index,
                     fun,
                     value,
+                    result,
                 } => {
                     let address = TexelAddress {
                         coordinate,
@@ -4290,7 +4303,7 @@ impl<W: Write> Writer<W> {
                         sample: None,
                         level: None,
                     };
-                    self.put_image_atomic(level, image, &address, fun, value, context)?
+                    self.put_image_atomic(level, image, &address, fun, value, result, context)?
                 }
                 crate::Statement::WorkGroupUniformLoad { pointer, result } => {
                     self.write_barrier(crate::Barrier::WORK_GROUP, level)?;

@@ -914,7 +914,15 @@ impl<W: Write> Writer<W> {
                 array_index,
                 ref fun,
                 value,
+                result,
             } => {
+                // WGSL's texture atomics return nothing: there is no way to write the old value
+                if let Some(result) = result {
+                    return Err(Error::unsupported(
+                        "texture atomic result (WGSL's texture atomics return nothing)",
+                        result,
+                    ));
+                }
                 write!(self.out, "{level}")?;
                 let fun_str = fun.to_wgsl();
                 write!(self.out, "textureAtomic{fun_str}(")?;

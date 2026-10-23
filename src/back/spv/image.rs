@@ -1306,6 +1306,7 @@ impl BlockContext<'_> {
         Ok(())
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn write_image_atomic(
         &mut self,
         image: Handle<crate::Expression>,
@@ -1313,6 +1314,7 @@ impl BlockContext<'_> {
         array_index: Option<Handle<crate::Expression>>,
         fun: crate::AtomicFunction,
         value: Handle<crate::Expression>,
+        result: Option<Handle<crate::Expression>>,
         block: &mut Block,
     ) -> Result<(), Error> {
         let image_id = match self.ir_function.originating_global(image) {
@@ -1377,6 +1379,11 @@ impl BlockContext<'_> {
             semantics_id,
             value_id,
         ));
+
+        // the instruction's result is the texel's old value
+        if let Some(result) = result {
+            self.cached[result] = id;
+        }
 
         Ok(())
     }

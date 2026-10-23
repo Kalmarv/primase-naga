@@ -59,6 +59,8 @@ pub enum AtomicError {
     MissingCapability(super::Capabilities),
     #[error("Result expression {0:?} is populated by multiple `Atomic` statements")]
     ResultAlreadyPopulated(Handle<crate::Expression>),
+    #[error("The operation on this image has no result: the old value {0:?} cannot be asked for")]
+    ImageResultUnsupported(Handle<crate::Expression>),
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -1279,6 +1281,7 @@ impl super::Validator {
                     array_index,
                     fun,
                     value,
+                    result,
                 } => {
                     let var = match *context.get_expression(image) {
                         crate::Expression::GlobalVariable(var_handle) => {
@@ -1456,6 +1459,44 @@ impl super::Validator {
                     if *context.resolve_type_inner(value, &self.valid_expression_set)? != value_ty {
                         return Err(FunctionError::InvalidImageAtomicValue(value)
                             .with_span_handle(value, context.expressions));
+                    }
+
+                    // The result, if asked for, is the texel's old value: a scalar of the value's type.
+                    if let Some(result) = result {
+                        // The 64-bit operations are the minimum and the maximum, which have no result.
+                        if value_ty.scalar_width() == Some(8) {
+                            return Err(AtomicError::ImageResultUnsupported(result)
+                                .with_span_handle(result, context.expressions)
+                                .into_other());
+                        }
+                        let crate::Expression::AtomicResult {
+                            ty: result_ty,
+                            comparison,
+                        } = context.expressions[result]
+                        else {
+                            return Err(AtomicError::InvalidResultExpression(result)
+                                .with_span_handle(result, context.expressions)
+                                .into_other());
+                        };
+                        if !self.needs_visit.remove(result) {
+                            return Err(AtomicError::ResultAlreadyPopulated(result)
+                                .with_span_handle(result, context.expressions)
+                                .into_other());
+                        }
+                        if !context.types[result_ty]
+                            .inner
+                            .non_struct_equivalent(&value_ty, context.types)
+                        {
+                            return Err(AtomicError::ResultTypeMismatch(result)
+                                .with_span_handle(result, context.expressions)
+                                .into_other());
+                        }
+                        if comparison {
+                            return Err(AtomicError::ResultExpressionExchange(result)
+                                .with_span_handle(result, context.expressions)
+                                .into_other());
+                        }
+                        self.emit_expression(result, context)?;
                     }
                 }
                 S::WorkGroupUniformLoad { pointer, result } => {

@@ -1136,6 +1136,7 @@ impl FunctionInfo {
                     array_index,
                     fun: _,
                     value,
+                    result: _,
                 } => {
                     let _ = self.add_ref_impl(image, GlobalUse::ATOMIC);
                     let _ = self.add_ref(coordinate);

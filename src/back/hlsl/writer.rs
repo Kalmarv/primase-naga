@@ -2808,8 +2808,25 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 array_index,
                 fun,
                 value,
+                result,
             } => {
                 write!(self.out, "{level}")?;
+
+                // the old value is the last argument: a variable declared before the call
+                let res_var_info = if let Some(res_handle) = result {
+                    let name = Baked(res_handle).to_string();
+                    match func_ctx.info[res_handle].ty {
+                        proc::TypeResolution::Handle(handle) => self.write_type(module, handle)?,
+                        proc::TypeResolution::Value(ref value) => {
+                            self.write_value_type(module, value)?
+                        }
+                    };
+                    write!(self.out, " {name}; ")?;
+                    self.named_expressions.insert(res_handle, name.clone());
+                    Some((res_handle, name))
+                } else {
+                    None
+                };
 
                 let fun_str = fun.to_hlsl_suffix();
                 write!(self.out, "Interlocked{fun_str}(")?;
@@ -2823,10 +2840,14 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     module,
                     func_ctx,
                 )?;
-                write!(self.out, "],")?;
-
-                self.write_expr(module, value, func_ctx)?;
-                writeln!(self.out, ");")?;
+                if res_var_info.is_some() {
+                    write!(self.out, "]")?;
+                    self.emit_hlsl_atomic_tail(module, func_ctx, &fun, None, value, &res_var_info)?;
+                } else {
+                    write!(self.out, "],")?;
+                    self.write_expr(module, value, func_ctx)?;
+                    writeln!(self.out, ");")?;
+                }
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {
                 self.write_control_barrier(crate::Barrier::WORK_GROUP, level)?;

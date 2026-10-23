@@ -83,8 +83,8 @@ Naga's rules for when `Expression`s are evaluated are as follows:
     is executed.
 
 -   Similarly, an [`AtomicResult`] expression that is the `result` of an
-    [`Atomic`] statement, representing the result of the atomic operation, is
-    evaluated when the `Atomic` statement is executed.
+    [`Atomic`] or [`ImageAtomic`] statement, representing the result of the atomic
+    operation, is evaluated when that statement is executed.
 
 -   A [`RayQueryProceedResult`] expression, which is a boolean
     indicating if the ray query is finished, is evaluated when the
@@ -178,6 +178,7 @@ except that it is also allowed to reference other [`Override`]s.
 An override expression can be evaluated at pipeline creation time.
 
 [`AtomicResult`]: Expression::AtomicResult
+[`ImageAtomic`]: Statement::ImageAtomic
 [`RayQueryProceedResult`]: Expression::RayQueryProceedResult
 [`CallResult`]: Expression::CallResult
 [`Constant`]: Expression::Constant
@@ -1834,9 +1835,10 @@ pub enum Expression {
     /// Result of an atomic operation.
     ///
     /// This expression must be referred to by the [`result`] field of exactly one
-    /// [`Atomic`][stmt] statement somewhere in the same function. Let `T` be the
-    /// scalar type contained by the [`Atomic`][type] value that the statement
-    /// operates on.
+    /// [`Atomic`][stmt] or [`ImageAtomic`][image_stmt] statement somewhere in the same
+    /// function. Let `T` be the scalar type contained by the [`Atomic`][type] value that
+    /// the statement operates on (for an [`ImageAtomic`][image_stmt], the scalar type of
+    /// the image's texels, always with `comparison` `false`).
     ///
     /// If `comparison` is `false`, then `ty` must be the scalar type `T`.
     ///
@@ -1848,6 +1850,7 @@ pub enum Expression {
     ///
     /// [`result`]: Statement::Atomic::result
     /// [stmt]: Statement::Atomic
+    /// [image_stmt]: Statement::ImageAtomic
     /// [type]: TypeInner::Atomic
     /// [`Struct`]: TypeInner::Struct
     /// [`BOOL`]: Scalar::BOOL
@@ -2286,6 +2289,17 @@ pub enum Statement {
 
         /// The value with which to perform the atomic operation.
         value: Handle<Expression>,
+
+        /// [`AtomicResult`] expression representing the value the texel held before the operation.
+        ///
+        /// This may be `None` if the old value is not needed. It must be `None` for a 64-bit image
+        /// (`r64uint`), whose operations are only the minimum and maximum, without a result.
+        ///
+        /// The result is a scalar of the same type as [`value`], and the expression is not a comparison.
+        ///
+        /// [`AtomicResult`]: crate::Expression::AtomicResult
+        /// [`value`]: Statement::ImageAtomic::value
+        result: Option<Handle<Expression>>,
     },
     /// Load uniformly from a uniform pointer in the workgroup address space.
     ///
