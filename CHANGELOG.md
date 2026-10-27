@@ -1,6 +1,14 @@
 # Change Log
 
-For changelogs after v0.14, see [the wgpu changelog](../CHANGELOG.md).
+## 30.0.1 (fork of naga 30.0.1, 2026-10-27)
+
+naga 30.0.1 as released in gfx-rs/wgpu v30.0.1, with:
+
+- the WGSL writer writes ray queries;
+- `Statement::ImageAtomic` has an optional result, the texel's previous value;
+- `AtomicFunction::Exchange` is accepted on 32-bit images.
+
+Upstream's log follows. For changelogs after v0.14, see [the wgpu changelog](https://github.com/gfx-rs/wgpu/blob/trunk/CHANGELOG.md).
 
 ## v0.14 (2023-10-25)
 
