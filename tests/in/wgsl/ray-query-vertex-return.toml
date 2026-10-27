@@ -1,5 +1,0 @@
-capabilities = "RAY_QUERY | RAY_HIT_VERTEX_POSITION"
-targets = "SPIRV | WGSL"
-
-[spv]
-version = [1, 4]

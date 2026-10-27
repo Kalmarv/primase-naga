@@ -1,20 +1,19 @@
 [package]
-name = "naga"
-version.workspace = true
-authors.workspace = true
-edition.workspace = true
-description = "Shader translator and validator. Part of the wgpu project"
-repository.workspace = true
-keywords = ["shader", "SPIR-V", "GLSL", "MSL"]
-license.workspace = true
-exclude = ["bin/**/*", "tests/**/*", "Cargo.lock", "target/**/*"]
-readme = "README.md"
-
-# Override the workspace's `rust-version` key. Firefox uses `cargo vendor` to
-# copy the crates it actually uses out of the workspace, so it's meaningful for
-# them to have less restrictive MSRVs individually than the workspace as a
-# whole, if their code permits. See `../README.md` for details.
+name = "primase-naga"
+version = "30.0.1"
+authors = ["gfx-rs developers"]
+edition = "2021"
 rust-version = "1.87"
+description = "naga 30.0.1 (the wgpu project's shader translator and validator) with three additions: WGSL output of ray queries, an optional result for ImageAtomic, and Exchange on 32-bit images"
+repository = "https://github.com/Kalmarv/primase-naga"
+homepage = "https://wgpu.rs/"
+keywords = ["shader", "SPIR-V", "GLSL", "MSL", "naga"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+exclude = ["Cargo.lock", "target/**/*"]
+
+[lib]
+name = "naga"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -83,51 +82,44 @@ stderr = ["codespan-reporting/std"]
 fs = []
 
 [dependencies]
-naga-types = { workspace = true }
-
-arbitrary = { workspace = true, features = ["derive"], optional = true }
-arrayvec.workspace = true
-bitflags.workspace = true
-bit-set.workspace = true
-cfg-if.workspace = true
-codespan-reporting = { workspace = true }
-hashbrown.workspace = true
-half = { workspace = true, features = ["num-traits"] }
-indexmap.workspace = true
-rustc-hash.workspace = true
-libm = { workspace = true, default-features = false }
-log.workspace = true
-num-traits.workspace = true
-once_cell = { workspace = true, features = ["alloc", "race"] }
-spirv = { workspace = true, optional = true }
-thiserror.workspace = true
-serde = { workspace = true, features = ["alloc", "derive"], optional = true }
-petgraph = { workspace = true, optional = true }
-pp-rs = { workspace = true, optional = true }
-unicode-ident = { workspace = true, optional = true }
+naga-types = { version = "30.0.0" }
+arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
+arrayvec = { version = "0.7.1", default-features = false }
+bitflags = "2.9"
+bit-set = { version = "0.10", default-features = false }
+cfg-if = "1"
+codespan-reporting = { version = "0.13", default-features = false }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more"] }
+half = { version = "2.5", default-features = false, features = ["num-traits"] }
+indexmap = { version = "2.11.4", default-features = false }
+rustc-hash = { version = "1.1", default-features = false }
+libm = { version = "0.2.6", default-features = false }
+log = "0.4.29"
+num-traits = { version = "0.2.16", default-features = false }
+once_cell = { version = "1.21", default-features = false, features = ["alloc", "race"] }
+spirv = { version = "0.4", optional = true }
+thiserror = { version = "2.0.12", default-features = false }
+serde = { version = "1.0.225", default-features = false, features = ["alloc", "derive"], optional = true }
+petgraph = { version = "0.8", default-features = false, optional = true }
+pp-rs = { version = "0.2.1", optional = true }
+unicode-ident = { version = "1.0.5", optional = true }
 
 [build-dependencies]
-cfg_aliases.workspace = true
+cfg_aliases = "0.2.2"
+
 
 [dev-dependencies]
-bytemuck.workspace = true
-diff.workspace = true
-env_logger.workspace = true
-hashbrown = { workspace = true, features = ["serde"] }
-hlsl-snapshots.workspace = true
-itertools.workspace = true
-naga-test.workspace = true
-ron.workspace = true
-rspirv.workspace = true
-# So we don't actually need this, however if we remove this, it
-# brakes calling `--features spirv` at the workspace level. I think
-# this is because there is a `dep:spirv` in the regular feature set,
-# so cargo tries to match the feature against that, fails as it's a optional dep,
-# and then refuses to build instead of ignoring it.
-spirv.workspace = true
-serde = { workspace = true, features = ["default", "derive"] }
-strum = { workspace = true }
-walkdir.workspace = true
+bytemuck = { version = "1.22", features = ["extern_crate_alloc", "min_const_generics"] }
+diff = "0.1"
+env_logger = { version = "0.11", default-features = false }
+itertools = { version = "0.14" }
+ron = "0.12"
+rspirv = "0.13"
+spirv = "0.4"
+strum = { version = "0.28", default-features = false, features = ["derive"] }
+walkdir = "2.3"
+serde = { version = "1.0.225", features = ["default", "derive"] }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more", "serde"] }
 
 [lints.rust]
 missing_debug_implementations = "warn"

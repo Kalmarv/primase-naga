@@ -1,3 +1,24 @@
+# primase-naga
+
+**A fork of [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) 30.0.1**, the wgpu project's shader translator,
+with three additions it lacks. Each is its own commit on top of naga as released:
+
+- the WGSL writer writes ray queries;
+- `Statement::ImageAtomic` has an optional result (the texel's previous value);
+- `AtomicFunction::Exchange` is accepted on 32-bit images.
+
+The library is still named `naga`, so depending on it is a one-line change:
+
+```toml
+naga = { package = "primase-naga", version = "30.0.1" }
+```
+
+It exists because [iridia](https://github.com/Kalmarv/iridia) lifts Direct3D bytecode into naga modules that use these
+features. When upstream naga has them, this fork is retired. Licensed like naga, MIT OR Apache-2.0
+(LICENSE.MIT, LICENSE.APACHE). Upstream's test suite needs the wgpu workspace and stays there.
+
+---
+
 # Naga
 
 [![Matrix](https://img.shields.io/badge/Matrix-%23naga%3Amatrix.org-blueviolet.svg)](https://matrix.to/#/#naga:matrix.org)
