@@ -1686,7 +1686,14 @@ impl<W: Write> Writer<W> {
                     Sl::Zero => {
                         // Level 0 is implied for depth comparison and BaseClampToEdge
                         if depth_ref.is_none() && !clamp_to_edge {
-                            write!(self.out, ", 0.0")?;
+                            let level = match func_ctx.info[image].ty.inner_with(&module.types) {
+                                TypeInner::Image {
+                                    class: crate::ImageClass::Depth { .. },
+                                    ..
+                                } => "0i",
+                                _ => "0.0",
+                            };
+                            write!(self.out, ", {level}")?;
                         }
                     }
                     Sl::Exact(expr) => {
