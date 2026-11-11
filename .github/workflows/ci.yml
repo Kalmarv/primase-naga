@@ -15,3 +15,4 @@ jobs:
           toolchain: stable
       - run: cargo check --all-features
       - run: cargo test --lib --all-features
+      - run: cargo test --all-features --test execution_correspondence --test primase_atomic_correspondence

@@ -610,6 +610,8 @@ enum SignAnchor {
 
 #[expect(missing_debug_implementations, reason = "would be way too verbose?")]
 pub struct Frontend<I> {
+    correspondence: Option<Vec<PendingArithmetic>>,
+    correspondence_function: u32,
     data: I,
     data_offset: usize,
     state: ModuleState,
@@ -678,6 +680,8 @@ pub struct Frontend<I> {
 impl<I: Iterator<Item = u32>> Frontend<I> {
     pub fn new(data: I, options: &Options) -> Self {
         Frontend {
+            correspondence: None,
+            correspondence_function: 0,
             data,
             data_offset: 0,
             state: ModuleState::Empty,
@@ -1044,10 +1048,12 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         let right = self.get_expr_handle(p2_id, p2_lexp, ctx, emitter, block, body_idx);
 
         let expr = crate::Expression::Binary { op, left, right };
+        let handle = ctx.expressions.append(expr, self.span_from_with_op(start));
+        self.record_import(ctx, result_id, result_type_id, handle, [p1_id, p2_id]);
         self.lookup_expression.insert(
             result_id,
             LookupExpression {
-                handle: ctx.expressions.append(expr, self.span_from_with_op(start)),
+                handle,
                 type_id: result_type_id,
                 block_id,
             },
@@ -1175,10 +1181,12 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
             },
         };
 
+        let handle = ctx.expressions.append(expr, span);
+        self.record_import(ctx, result_id, result_type_id, handle, [p1_id, p2_id]);
         self.lookup_expression.insert(
             result_id,
             LookupExpression {
-                handle: ctx.expressions.append(expr, span),
+                handle,
                 type_id: result_type_id,
                 block_id,
             },
@@ -1708,7 +1716,25 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         Ok(())
     }
 
-    pub fn parse(mut self) -> Result<crate::Module, Error> {
+    pub fn parse(self) -> Result<crate::Module, Error> {
+        self.parse_impl().map(|(module, _)| module)
+    }
+
+    /// Report direct arithmetic correspondence after all frontend postprocessing.
+    /// Uses the same options and errors as [`Self::parse`]. The returned module
+    /// still needs validation. See [`crate::correspondence`] for validity and
+    /// unsupported boundaries.
+    pub fn parse_with_report(
+        mut self,
+    ) -> Result<(crate::Module, crate::correspondence::ImportReport), Error> {
+        self.correspondence = Some(Vec::new());
+        self.parse_impl()
+            .map(|(module, report)| (module, report.unwrap()))
+    }
+
+    fn parse_impl(
+        mut self,
+    ) -> Result<(crate::Module, Option<crate::correspondence::ImportReport>), Error> {
         let mut module = {
             if self.next()? != spirv::MAGIC_NUMBER {
                 return Err(Error::InvalidHeader);
@@ -1860,7 +1886,57 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
             self.future_member_decor.clear();
         }
 
-        Ok(module)
+        let report = self.correspondence.take().map(|pending| {
+            use crate::correspondence::*;
+            let arithmetic = pending
+                .into_iter()
+                .map(|p| {
+                    let resolved = self.lookup_function.get(&p.function_id).and_then(|lookup| {
+                        let fun = module.functions.try_get(lookup.handle).ok()?;
+                        let expression = fun.expressions.try_get(p.producer).ok()?;
+                        (p.direct && *expression == p.expected)
+                            .then_some(Owner::Function(lookup.handle))
+                    });
+                    if let Some(owner) = resolved {
+                        ImportedArithmetic::Direct {
+                            function_id: p.function_id,
+                            result_id: p.result_id,
+                            type_id: p.type_id,
+                            producer: ExpressionRef {
+                                owner,
+                                expression: p.producer,
+                            },
+                            arguments: [
+                                (
+                                    p.ids[0],
+                                    ExpressionRef {
+                                        owner,
+                                        expression: p.arguments[0],
+                                    },
+                                ),
+                                (
+                                    p.ids[1],
+                                    ExpressionRef {
+                                        owner,
+                                        expression: p.arguments[1],
+                                    },
+                                ),
+                            ],
+                        }
+                    } else {
+                        ImportedArithmetic::Unsupported {
+                            function_id: p.function_id,
+                            result_id: p.result_id,
+                        }
+                    }
+                })
+                .collect();
+            ImportReport {
+                revision: REVISION,
+                arithmetic,
+            }
+        });
+        Ok((module, report))
     }
 
     fn parse_capability(&mut self, inst: Instruction) -> Result<(), Error> {
@@ -3252,6 +3328,64 @@ fn is_parent(mut child: usize, parent: usize, block_ctx: &BlockContext) -> bool 
         }
 
         child = block_ctx.bodies[child].parent;
+    }
+}
+
+struct PendingArithmetic {
+    function_id: u32,
+    result_id: u32,
+    type_id: u32,
+    producer: Handle<crate::Expression>,
+    expected: crate::Expression,
+    arguments: [Handle<crate::Expression>; 2],
+    ids: [u32; 2],
+    direct: bool,
+}
+fn arithmetic_arguments(expr: &crate::Expression) -> Option<[Handle<crate::Expression>; 2]> {
+    match *expr {
+        crate::Expression::Binary {
+            op:
+                crate::BinaryOperator::Add
+                | crate::BinaryOperator::Subtract
+                | crate::BinaryOperator::Multiply,
+            left,
+            right,
+        } => Some([left, right]),
+        crate::Expression::Math {
+            fun: crate::MathFunction::Dot,
+            arg,
+            arg1: Some(right),
+            ..
+        } => Some([arg, right]),
+        _ => None,
+    }
+}
+impl<I: Iterator<Item = u32>> Frontend<I> {
+    fn record_import(
+        &mut self,
+        ctx: &BlockContext,
+        result_id: u32,
+        type_id: u32,
+        producer: Handle<crate::Expression>,
+        ids: [u32; 2],
+    ) {
+        if let Some(report) = self.correspondence.as_mut() {
+            if let Some(arguments) = arithmetic_arguments(&ctx.expressions[producer]) {
+                let direct = self.lookup_expression.get(&ids[0]).map(|v| v.handle)
+                    == Some(arguments[0])
+                    && self.lookup_expression.get(&ids[1]).map(|v| v.handle) == Some(arguments[1]);
+                report.push(PendingArithmetic {
+                    function_id: self.correspondence_function,
+                    result_id,
+                    type_id,
+                    producer,
+                    expected: ctx.expressions[producer].clone(),
+                    arguments,
+                    ids,
+                    direct,
+                });
+            }
+        }
     }
 }
 

@@ -113,6 +113,7 @@ mod arena;
 pub mod back;
 pub mod common;
 pub mod compact;
+pub mod correspondence;
 pub mod diagnostic_filter;
 pub mod error;
 pub mod front;

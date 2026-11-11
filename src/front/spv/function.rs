@@ -33,6 +33,7 @@ impl<I: Iterator<Item = u32>> super::Frontend<I> {
 
         let result_type_id = self.next()?;
         let fun_id = self.next()?;
+        self.correspondence_function = fun_id;
         let _fun_control = self.next()?;
         let fun_type_id = self.next()?;
 

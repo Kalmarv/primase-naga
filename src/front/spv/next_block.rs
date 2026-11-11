@@ -1085,10 +1085,12 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         arg2: None,
                         arg3: None,
                     };
+                    let handle = ctx.expressions.append(expr, span);
+                    self.record_import(ctx, result_id, result_type_id, handle, [left_id, right_id]);
                     self.lookup_expression.insert(
                         result_id,
                         LookupExpression {
-                            handle: ctx.expressions.append(expr, span),
+                            handle,
                             type_id: result_type_id,
                             block_id,
                         },

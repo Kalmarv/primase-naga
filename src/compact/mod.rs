@@ -66,6 +66,28 @@ impl From<KeepUnused> for bool {
 ///
 /// If `module` would not pass validation, this may panic.
 pub fn compact(module: &mut crate::Module, keep_unused: KeepUnused) {
+    compact_impl(module, keep_unused, false);
+}
+
+/// Run the same compaction, exposing its actual maps without adding roots.
+/// Local variables and argument ordinals survive unchanged in surviving owners.
+/// See [`crate::correspondence`] for execution-local validity boundaries.
+///
+/// # Panics
+///
+/// Like [`compact`], this may panic if `module` would not pass validation.
+pub fn compact_with_report(
+    module: &mut crate::Module,
+    keep_unused: KeepUnused,
+) -> crate::correspondence::CompactionReport {
+    compact_impl(module, keep_unused, true).unwrap()
+}
+
+fn compact_impl(
+    module: &mut crate::Module,
+    keep_unused: KeepUnused,
+    report: bool,
+) -> Option<crate::correspondence::CompactionReport> {
     // The trickiest part of compaction is determining what is used and what is
     // not. Once we have computed that correctly, it's easy enough to call
     // `retain_mut` on each arena, drop unused elements, and fix up the handles
@@ -265,6 +287,93 @@ pub fn compact(module: &mut crate::Module, keep_unused: KeepUnused) {
     // in the compacted module.
     let module_map = ModuleMap::from(module_tracer);
 
+    let report = report.then(|| {
+        use crate::correspondence::*;
+        fn remap<T: 'static>(
+            handles: impl Iterator<Item = crate::Handle<T>>,
+            map: &HandleMap<T>,
+        ) -> Vec<HandleRemap<T>> {
+            handles
+                .map(|old| HandleRemap {
+                    old,
+                    new: map
+                        .try_adjust(old)
+                        .map_or(Disposition::Removed, Disposition::Survives),
+                })
+                .collect()
+        }
+        let mut owners = Vec::new();
+        for (h, fun) in module.functions.iter() {
+            let new = module_map.functions.try_adjust(h).map(Owner::Function);
+            owners.push(OwnerRemap {
+                old: Owner::Function(h),
+                new: new.map_or(Disposition::Removed, Disposition::Survives),
+                expressions: fun
+                    .expressions
+                    .iter()
+                    .map(|(e, _)| {
+                        let mapped = function_maps
+                            .get(h)
+                            .and_then(|m| m.expressions.try_adjust(e));
+                        (
+                            e,
+                            mapped.map_or(Disposition::Removed, |expression| {
+                                Disposition::Survives(ExpressionRef {
+                                    owner: new.unwrap(),
+                                    expression,
+                                })
+                            }),
+                        )
+                    })
+                    .collect(),
+            });
+        }
+        for (index, ep) in module.entry_points.iter().enumerate() {
+            let owner = Owner::EntryPoint(index);
+            owners.push(OwnerRemap {
+                old: owner,
+                new: Disposition::Survives(owner),
+                expressions: ep
+                    .function
+                    .expressions
+                    .iter()
+                    .map(|(e, _)| {
+                        (
+                            e,
+                            entry_point_maps[index].expressions.try_adjust(e).map_or(
+                                Disposition::Removed,
+                                |expression| {
+                                    Disposition::Survives(ExpressionRef { owner, expression })
+                                },
+                            ),
+                        )
+                    })
+                    .collect(),
+            });
+        }
+        CompactionReport {
+            revision: REVISION,
+            owners,
+            types: remap(module.types.iter().map(|(h, _)| h), &module_map.types),
+            globals: remap(
+                module.global_variables.iter().map(|(h, _)| h),
+                &module_map.globals,
+            ),
+            constants: remap(
+                module.constants.iter().map(|(h, _)| h),
+                &module_map.constants,
+            ),
+            overrides: remap(
+                module.overrides.iter().map(|(h, _)| h),
+                &module_map.overrides,
+            ),
+            global_expressions: remap(
+                module.global_expressions.iter().map(|(h, _)| h),
+                &module_map.global_expressions,
+            ),
+        }
+    });
+
     // Drop unused types from the type arena.
     //
     // `FastIndexSet`s don't have an underlying Vec<T> that we can
@@ -397,6 +506,7 @@ pub fn compact(module: &mut crate::Module, keep_unused: KeepUnused) {
             }
         }
     }
+    report
 }
 
 struct ModuleTracer<'module> {

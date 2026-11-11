@@ -1260,6 +1260,31 @@ impl BlockContext<'_> {
                         if reverse_operands { right_id } else { left_id },
                         if reverse_operands { left_id } else { right_id },
                     ));
+                    if self.writer.correspondence.is_some()
+                        && matches!(
+                            (get_dimension(left_ty_inner), get_dimension(right_ty_inner)),
+                            (Dimension::Scalar, Dimension::Scalar)
+                                | (Dimension::Vector, Dimension::Vector)
+                        )
+                        && matches!(
+                            spirv_op,
+                            spirv::Op::IAdd
+                                | spirv::Op::FAdd
+                                | spirv::Op::ISub
+                                | spirv::Op::FSub
+                                | spirv::Op::IMul
+                                | spirv::Op::FMul
+                        )
+                    {
+                        self.writer.record_arithmetic(
+                            expr_handle,
+                            spirv_op,
+                            result_type_id,
+                            id,
+                            [left, right],
+                            [left_id, right_id],
+                        );
+                    }
                 }
                 id
             }
@@ -1425,13 +1450,23 @@ impl BlockContext<'_> {
                                     ..
                                 },
                             ..
-                        } => MathOp::Custom(Instruction::binary(
-                            spirv::Op::Dot,
-                            result_type_id,
-                            id,
-                            arg0_id,
-                            arg1_id,
-                        )),
+                        } => {
+                            self.writer.record_arithmetic(
+                                expr_handle,
+                                spirv::Op::Dot,
+                                result_type_id,
+                                id,
+                                [arg, arg1.unwrap()],
+                                [arg0_id, arg1_id],
+                            );
+                            MathOp::Custom(Instruction::binary(
+                                spirv::Op::Dot,
+                                result_type_id,
+                                id,
+                                arg0_id,
+                                arg1_id,
+                            ))
+                        }
                         // TODO: consider using integer dot product if VK_KHR_shader_integer_dot_product is available
                         crate::TypeInner::Vector { size, .. } => {
                             self.write_dot_product(

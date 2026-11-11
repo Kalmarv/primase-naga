@@ -919,6 +919,8 @@ pub struct Std140CompatTypeInfo {
 
 #[expect(missing_debug_implementations, reason = "would be way too verbose?")]
 pub struct Writer {
+    correspondence: Option<crate::correspondence::EmissionReport>,
+    correspondence_owner: Option<crate::correspondence::Owner>,
     physical_layout: PhysicalLayout,
     logical_layout: LogicalLayout,
     id_gen: IdGenerator,
@@ -1226,4 +1228,93 @@ pub fn supported_capabilities() -> crate::valid::Capabilities {
         | Caps::DRAW_INDEX
         | Caps::MEMORY_DECORATION_COHERENT
         | Caps::MEMORY_DECORATION_VOLATILE
+}
+
+/// Like [`write_vec`], also returning correspondence for this exact execution.
+///
+/// `info` must come from validation of `module`, as for [`write_vec`]. The same
+/// options, selection policy, capability checks and errors apply. See
+/// [`crate::correspondence`] for supported relations and validity boundaries.
+pub fn write_vec_with_report(
+    module: &crate::Module,
+    info: &crate::valid::ModuleInfo,
+    options: &Options,
+    pipeline_options: Option<&PipelineOptions>,
+) -> Result<(Vec<u32>, crate::correspondence::EmissionReport), Error> {
+    use crate::correspondence::*;
+    let mut report = EmissionReport {
+        revision: REVISION,
+        values: Vec::new(),
+        arithmetic: Vec::new(),
+    };
+    for (owner, fun) in module
+        .functions
+        .iter()
+        .map(|(h, f)| (Owner::Function(h), f))
+        .chain(
+            module
+                .entry_points
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (Owner::EntryPoint(i), &e.function)),
+        )
+    {
+        report
+            .values
+            .extend(fun.expressions.iter().map(|(expression, _)| {
+                (
+                    ExpressionRef { owner, expression },
+                    EmittedValue::OwnerNotEmitted,
+                )
+            }));
+    }
+    let mut w = Writer::new(options)?;
+    w.correspondence = Some(report);
+    let mut words = Vec::new();
+    w.write(
+        module,
+        info,
+        pipeline_options,
+        &options.debug_info,
+        &mut words,
+    )?;
+    Ok((words, w.correspondence.take().unwrap()))
+}
+impl Writer {
+    fn record_arithmetic(
+        &mut self,
+        expression: Handle<crate::Expression>,
+        opcode: spirv::Op,
+        type_id: u32,
+        result_id: u32,
+        arguments: [Handle<crate::Expression>; 2],
+        ids: [u32; 2],
+    ) {
+        use crate::correspondence::*;
+        if let Some(report) = self.correspondence.as_mut() {
+            let owner = self.correspondence_owner.unwrap();
+            report.arithmetic.push(EmittedArithmetic {
+                producer: ExpressionRef { owner, expression },
+                opcode: opcode as u32,
+                type_id,
+                result_id,
+                arguments: [
+                    (
+                        ExpressionRef {
+                            owner,
+                            expression: arguments[0],
+                        },
+                        ids[0],
+                    ),
+                    (
+                        ExpressionRef {
+                            owner,
+                            expression: arguments[1],
+                        },
+                        ids[1],
+                    ),
+                ],
+            });
+        }
+    }
 }

@@ -1,5 +1,11 @@
 # Change Log
 
+## Unreleased
+
+- Add opt-in execution correspondence reports for compaction and SPIR-V writing
+  and parsing, including removed handles, terminal value IDs, and direct arithmetic.
+  Reports are valid only for the exact modules and words from that execution.
+
 ## 30.0.1 (fork of naga 30.0.1, 2026-10-27)
 
 naga 30.0.1 as released in gfx-rs/wgpu v30.0.1, with:
