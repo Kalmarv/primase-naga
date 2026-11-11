@@ -109,6 +109,7 @@ cfg_aliases = "0.2.2"
 
 
 [dev-dependencies]
+bincode = { version = "2.0.1", features = ["serde"] }
 bytemuck = { version = "1.22", features = ["extern_crate_alloc", "min_const_generics"] }
 diff = "0.1"
 env_logger = { version = "0.11", default-features = false }
@@ -128,3 +129,18 @@ missing_debug_implementations = "warn"
 std_instead_of_alloc = "warn"
 std_instead_of_core = "warn"
 alloc_instead_of_core = "warn"
+
+[[test]]
+name = "function_control_serialization"
+path = "tests/function_control_serialization.rs"
+required-features = ["wgsl-in", "serialize", "deserialize"]
+
+[[test]]
+name = "no_contraction"
+path = "tests/no_contraction.rs"
+required-features = ["wgsl-in", "spv-in", "spv-out", "hlsl-out", "glsl-out", "msl-out"]
+
+[[test]]
+name = "no_contraction_primase"
+path = "tests/no_contraction_primase.rs"
+required-features = ["wgsl-in", "wgsl-out", "spv-out", "hlsl-out"]

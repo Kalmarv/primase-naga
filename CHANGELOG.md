@@ -1,5 +1,10 @@
 # Change Log
 
+## Unreleased
+
+- Preserve producer-local `NoContraction` controls through validation, specialization, compaction, SPIR-V import/export, and supported GLSL/HLSL output. Unsupported operations and target profiles return errors.
+- Serialize empty arithmetic-control maps so binary IR round trips retain the complete function layout.
+
 ## 30.0.1 (fork of naga 30.0.1, 2026-10-27)
 
 naga 30.0.1 as released in gfx-rs/wgpu v30.0.1, with:
