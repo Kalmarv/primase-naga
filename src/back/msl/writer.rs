@@ -4564,6 +4564,23 @@ impl<W: Write> Writer<W> {
         options: &Options,
         pipeline_options: &PipelineOptions,
     ) -> Result<TranslationInfo, Error> {
+        let ep_range = get_entry_points(module, pipeline_options.entry_point.as_ref())
+            .map_err(|(stage, name)| Error::EntryPointNotFound(stage, name))?;
+        let reachable = module
+            .has_arithmetic_controls()
+            .then(|| back::reachable_functions(module, ep_range.clone()));
+        if ep_range.clone().any(|index| {
+            !module.entry_points[index]
+                .function
+                .expression_controls
+                .is_empty()
+        }) || reachable.as_ref().is_some_and(|functions| {
+            functions
+                .iter()
+                .any(|&handle| !module.functions[handle].expression_controls.is_empty())
+        }) {
+            return Err(Error::UnsupportedArithmeticControls);
+        }
         self.emit_int_div_checks = options.emit_int_div_checks;
         self.names.clear();
         self.namer.reset(
@@ -6849,6 +6866,11 @@ template <typename A>
         options: &Options,
         pipeline_options: &PipelineOptions,
     ) -> Result<TranslationInfo, Error> {
+        let ep_range = get_entry_points(module, pipeline_options.entry_point.as_ref())
+            .map_err(|(stage, name)| Error::EntryPointNotFound(stage, name))?;
+        let reachable = module
+            .has_arithmetic_controls()
+            .then(|| back::reachable_functions(module, ep_range.clone()));
         use nt::VertexFormat;
 
         // Define structs to hold resolved/generated data for vertex buffers and
@@ -6954,6 +6976,12 @@ template <typename A>
 
         let mut pass_through_globals = Vec::new();
         for (fun_handle, fun) in module.functions.iter() {
+            if reachable
+                .as_ref()
+                .is_some_and(|functions| !functions.contains(&fun_handle))
+            {
+                continue;
+            }
             log::trace!(
                 "function {:?}, handle {:?}",
                 fun.name.as_deref().unwrap_or("(anonymous)"),
@@ -7077,9 +7105,6 @@ template <typename A>
             writeln!(self.out, "}}")?;
             self.named_expressions.clear();
         }
-
-        let ep_range = get_entry_points(module, pipeline_options.entry_point.as_ref())
-            .map_err(|(stage, name)| Error::EntryPointNotFound(stage, name))?;
 
         let mut info = TranslationInfo {
             entry_point_names: Vec::with_capacity(ep_range.len()),

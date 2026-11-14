@@ -1,5 +1,12 @@
 # Change Log
 
+## Unreleased
+
+- Add scalar-f32 Exp2 producer controls with SPIR-V FloatControls2 transport and isolated precise HLSL helpers for qualified DXC compilers. Unsupported operations, types and output profiles return errors. A SPIR-V module that declares `FloatControls2` is written in the explicit `SPV_KHR_float_controls2` form: each entry point sets `FPFastMathDefault` to the Vulkan default flags for every float width, and `NoContraction` on a float result is written as `FPFastMathMode NotNaN|NotInf|NSZ`. SPIR-V import reads that form back and rejects defaults and masks it cannot preserve.
+
+- Preserve producer-local `NoContraction` controls through validation, specialization, compaction, SPIR-V import/export, and supported GLSL/HLSL output. Unsupported operations and target profiles return errors.
+- Serialize empty arithmetic-control maps so binary IR round trips retain the complete function layout.
+
 ## 30.0.1 (fork of naga 30.0.1, 2026-10-27)
 
 naga 30.0.1 as released in gfx-rs/wgpu v30.0.1, with:
